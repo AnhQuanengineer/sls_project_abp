@@ -106,7 +106,8 @@ def get_spark_config() -> Dict:
             "port": db_configs["elastic_search"].port,
             "user": db_configs["elastic_search"].user,
             "password": db_configs["elastic_search"].password,
-            "index": db_configs["elastic_search"].index,
+            "index_not_classify": db_configs["elastic_search"].index_not_classify,
+            "index_classify": db_configs["elastic_search"].index_classify,
         }
         # "clickhouse": {
         #     "jdbc_url": "jdbc:clickhouse://{}:{}/{}".format(db_configs["clickhouse"].host, db_configs["clickhouse"].port_spark,

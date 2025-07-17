@@ -76,19 +76,21 @@ class SparkWriteDatabases:
             .load()
 
         df_read = df_read.select(
-            col("id")
+            col("url")
+            , col("org_id")
         )
 
         def subtract_dataframe(df_spark_write: DataFrame, df_read_database: DataFrame):
             #subtract 2 datafame
             result = df_spark_write.select(
-                col("id")
+                col("url")
+                , col("org_id")
             ).subtract(df_read_database)
-            result.show()
+            # result.show()
             print(f"-------------Result records: {result.count()}--------------------")
             if not result.isEmpty():
-                diff_records = df_spark_write.join(result,["id"], "inner")
-                diff_records.show()
+                diff_records = df_spark_write.join(result,["url","org_id"], "inner")
+                diff_records.show(truncate= False)
                 diff_records.write \
                     .format("jdbc") \
                     .option("url", spark_config["jdbc_url"]) \
@@ -121,9 +123,15 @@ class SparkWriteDatabases:
                     result = cursor.fetchall()
                     print(f"---------------------Số bản ghi sắp insert vào tbl_posts: {result}--------------------------")
 
+                    cursor.execute("SELECT insert_analysis_posts_v2(ARRAY[%s])",
+                                   ([2, 3, 6, 4, 7, 11, 12, 16, 17, 18, 19, 20, 21, 22, 25, 24, 23, 26, 8, 9],))
+                    result1 = cursor.fetchall()
+                    print(
+                        f"---------------------Số bản ghi sắp insert vào analysis_posts: {result1}--------------------------")
+
                     # Commit the transaction
                     connection.commit()
-                    print("--------------------------Thêm vào tbl_posts thành công.-----------------------")
+                    print("--------------------------Thêm vào tools thành công.-----------------------")
 
             except Exception as e:
                 print(f"Lỗi: {e}")
@@ -148,9 +156,15 @@ class SparkWriteDatabases:
                     result = cursor.fetchall()
                     print(f"----------------------Số bản ghi sắp insert vào tbl_posts: {result}--------------------------")
 
+                    cursor.execute("SELECT insert_analysis_posts_v2(ARRAY[%s])",
+                                   ([2, 3, 6, 4, 7, 11, 12, 16, 17, 18, 19, 20, 21, 22, 25, 24, 23, 26, 8, 9],))
+                    result1 = cursor.fetchall()
+                    print(
+                        f"---------------------Số bản ghi sắp insert vào analysis_posts: {result1}--------------------------")
+
                     # Commit the transaction
                     connection.commit()
-                    print("----------------------Thêm vào tbl_posts thành công.-------------------------------")
+                    print("----------------------Thêm vào tools thành công.-------------------------------")
 
             except Exception as e:
                 print(f"Lỗi: {e}")
@@ -232,11 +246,12 @@ class SparkWriteDatabases:
         def subtract_dataframe(df_spark_write: DataFrame, df_read_database: DataFrame):
             #subtract 2 datafame
             result = df_spark_write.select("post_id").subtract(df_read_database)
-            result.show()
+            # result.show()
             print(f"-------------Result records: {result.count()}--------------------")
             if not result.isEmpty():
                 diff_records = df_spark_write.join(result, ["post_id"], "inner")
-                diff_records.show()
+                diff_records.show(truncate= False)
+                print(f"=========================={diff_records.count()}=========================================")
                 diff_records.write \
                     .format("mongo") \
                     .option("uri", uri) \

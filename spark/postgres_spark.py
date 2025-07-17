@@ -11,6 +11,8 @@ from get_config.spark_config import SparkConnect, get_spark_config
 from spark.spark_write_data import SparkWriteDatabases
 from datetime import datetime, timedelta
 import pytz
+from datetime import datetime, timedelta
+from time import mktime
 
 
 def main():
@@ -56,9 +58,14 @@ def main():
         StructField("sentiment", IntegerType(), True),
         StructField("source_url", StringType(), True),
         StructField("auth_url", StringType(), True),
-        StructField("createdAt", StringType(), True),
+        StructField("createdAt", TimestampType(), True),
         StructField("post_id", StringType(), True)
     ])
+
+    schema_keywords = StructType([
+                StructField("code", StringType(), True),
+                StructField("org_id", IntegerType(), True)
+            ])
 
     # Khởi tạo Spark Session
     spark_connect = SparkConnect(
@@ -70,57 +77,93 @@ def main():
         , num_executors=1
         , jars=None
         , jar_packages=file_jar_package
-        , spark_conf=spark_conf
+        # , spark_conf=spark_conf
         , log_level="INFO"
     )
 
     spark_configs = get_spark_config()
     # print(spark_configs["postgres"])
 
-    df = spark_connect.spark.read.format("mongo") \
+    df_posts = spark_connect.spark.read.format("mongo") \
         .option("uri", spark_configs["mongodb"]["uri"]) \
         .option("database", spark_configs["mongodb"]["database"]) \
         .option("collection", spark_configs["mongodb"]["collection_posts"]) \
         .schema(schema) \
         .load()
 
-    # df = df.select(col("createdAt")).show(truncate= False)
+    df_posts = df_posts.withColumn("createdAt", expr("createdAt - interval 7 hours"))
+    # df_posts.select(col("createdAt")).orderBy(col("createdAt").desc()).show(truncate=False)
 
-    df = df.withColumn("createdAt", to_timestamp(col("createdAt"), "yyyy-MM-dd HH:mm:ss.SSSSSS"))
-    # df = df.select(col("createdAt")).show(truncate= False)
+    df_posts = df_posts.filter(
+        (col("createdAt") >= current_date()) &
+        (col("createdAt") < date_add(current_date(), 1))
+    )
+    # print(df_posts.count())
+
+    # df_posts = df_posts.select(col("createdAt")).show(truncate= False)
+
+    # df_posts = df_posts.withColumn("createdAt", to_timestamp(col("createdAt"), "yyyy-MM-dd HH:mm:ss.SSSSSS"))
+
+    #==========================================================================
+    # # Lấy thời gian hiện tại theo múi giờ Việt Nam (UTC+7)
+    # tz = pytz.timezone("Asia/Ho_Chi_Minh")
+    # current_time = datetime.now(tz)
+    #
+    # # 0h sáng hôm nay
+    # start_time = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    # start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S.000000")
+    # print(start_time)
+    #
+    # # 0h sáng ngày mai
+    # end_time = start_time + timedelta(days=1)
+    # end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S.000000")
+    # print(end_time)
+
+    # Lọc dữ liệu
+    # df_posts = df_posts.filter((col("createdAt") >= start_time) & (col("createdAt") <= end_time))
 
 
-    # Lấy thời gian hiện tại theo múi giờ Việt Nam (UTC+7)
-    tz = pytz.timezone("Asia/Ho_Chi_Minh")
-    current_time = datetime.now(tz)
+    # =========================================================================
+    # current_time = datetime.now()
+    # # 0h tomorrow
+    # end_time = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # end_timestamp = int(mktime(end_time.timetuple()))
+    # print(end_timestamp)
+    # # 8h yesterday
+    # start_time = (current_time - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # # print(start_time)
+    # start_timestamp = int(mktime(start_time.timetuple()))
+    # print(start_timestamp)
+    # # filter from date
+    #
+    # df_posts = df_posts.filter((col("pub_time") >= start_timestamp) & (col("pub_time") <= end_timestamp))
 
-    # 0h sáng hôm nay
-    start_time = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S.000000")
-    print(start_time_str)
-
-    # 0h sáng ngày mai
-    end_time = start_time + timedelta(days=1)
-    end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S.000000")
-    print(end_time_str)
-
+    #==============================================================
     # Convert string times to timestamps for filtering
     # start_time_ts = to_timestamp(lit(start_time_str), "yyyy-MM-dd HH:mm:ss.SSSSSS")
     # end_time_ts = to_timestamp(lit(end_time_str), "yyyy-MM-dd HH:mm:ss.SSSSSS")
 
-    # df = df.withColumn("createdAt", from_utc_timestamp(col("createdAt"), "Asia/Ho_Chi_Minh"))
 
-    # Lọc dữ liệu
-    df = df.filter((col("createdAt") >= start_time_str) & (col("createdAt") <= end_time_str))
-    # df.show()
+    df_orgs = spark_connect.spark.read.format("mongo") \
+        .option("uri", spark_configs["mongodb"]["uri"]) \
+        .option("database", spark_configs["mongodb"]["database"]) \
+        .option("collection", spark_configs["mongodb"]["collection_key_words"]) \
+        .schema(schema_keywords) \
+        .load()
+    # df_orgs.show()
 
-    df = df.withColumn("is_sent", lit(0)) \
+    df_postgres = df_posts.join(df_orgs,["org_id"],"inner")
+
+    df_postgres = df_postgres.withColumn("is_sent", lit(0)) \
         .withColumn("spam", lit(0)) \
         .withColumn("completed", lit(0)) \
         .withColumn("bot_id", lit("bot_cron")) \
+        .withColumn("unique_id", monotonically_increasing_id()) \
+        .withColumn("uid", substring(md5(concat(col("unique_id"), expr("rand()"))), 1, 16)) \
+        .withColumn("id", concat_ws("-", "code","crawl_source_code","source_type","auth_type","doc_type","uid")) \
         .select(
-            col("post_id").alias("id")
-            # col("id")
+            # col("post_id").alias("id")
+            col("id")
             , col("org_id")
             , col("doc_type")
             , col("source_type")
@@ -155,13 +198,13 @@ def main():
             , col("source_url")
             , col("auth_url")
             , col("bot_id")
-    ).dropDuplicates(["id"])
-    df.show(truncate= False)
+    ).dropDuplicates(["url","org_id"])
+    # df_postgres.show(truncate= False)
     # df.printSchema()
     # print(df.count())
 
     df_write = SparkWriteDatabases(spark_connect.spark, spark_configs)
-    df_write.spark_validate_before_write_comment_postgres(df, spark_configs["postgres"]["config"]["table_posts"], spark_configs["postgres"],"append")
+    df_write.spark_validate_before_write_comment_postgres(df_postgres, spark_configs["postgres"]["config"]["table_posts"], spark_configs["postgres"],"append")
 
     spark_connect.spark.stop()
 

@@ -76,7 +76,7 @@ def main():
     posts_df = spark_connect.spark.read.format("org.elasticsearch.spark.sql") \
         .option("es.nodes", spark_configs["elastic_search"]["host"]) \
         .option("es.port", spark_configs["elastic_search"]["port"]) \
-        .option("es.resource", spark_configs["elastic_search"]["index"]) \
+        .option("es.resource", spark_configs["elastic_search"]["index_not_classify"]) \
         .option("es.read.metadata", "true") \
         .option("es.net.http.auth.user", spark_configs["elastic_search"]["user"]) \
         .option("es.net.http.auth.pass", spark_configs["elastic_search"]["password"]) \
@@ -84,6 +84,16 @@ def main():
         .option("es.nodes.wan.only", "true") \
         .schema(schema) \
         .load()
+
+    # posts_df = spark_connect.spark.read.format("mongo") \
+    #     .option("uri", spark_configs["mongodb"]["uri"]) \
+    #     .option("database", spark_configs["mongodb"]["database"]) \
+    #     .option("collection", "data_unclassified") \
+    #     .schema(schema) \
+    #     .load()
+
+    # posts_df.show()
+    # print(posts_df.count())
 
     schema_keywords = StructType([
         StructField("code", StringType(), True),
@@ -116,19 +126,22 @@ def main():
     # orgs_df.select("spamwords").show(truncate=False)
 
     current_time = datetime.now()
-    # 8h today
+    # 0h tomorrow
     end_time = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     end_timestamp = int(mktime(end_time.timetuple()))
+    # print(end_time)
     # 8h yesterday
-    start_time = (current_time - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_time = (current_time - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # print(start_time)
     start_timestamp = int(mktime(start_time.timetuple()))
+    # print(start_timestamp)
     #filter from date
 
     posts_df = posts_df.withColumn("level", col("level").cast(IntegerType()))
     posts_df = posts_df.filter((col("pub_time") >= start_timestamp) & (col("pub_time") <= end_timestamp))
     posts_df = posts_df.filter((col("content").isNotNull()) | (col("content") != ""))
 
-    print(posts_df.count())
+    # print(posts_df.count())
 
     # change to lower case
     posts_df = posts_df.withColumn("content_lower", lower(col("content")))
@@ -201,7 +214,6 @@ def main():
         , col("favors")
         , col("level")
         , col("media_urls")
-        , col("mg_sync")
         , col("pub_time")
         , col("reactions")
         , col("reply_to")
@@ -231,8 +243,8 @@ def main():
     )
 
     posts_classified_df = posts_joined_df.withColumn("post_id", concat_ws("-", "url", "org_id")) \
-        .withColumn("createdAt", current_timestamp()) \
-        .withColumn("updatedAt", current_timestamp()) \
+        .withColumn("createdAt", expr("current_timestamp() + interval 7 hours")) \
+        .withColumn("updatedAt", expr("current_timestamp() + interval 7 hours")) \
         .withColumn("pg_sync", lit(False)) \
         .select(
         col("post_id").cast(StringType())
@@ -267,11 +279,11 @@ def main():
         , col("org_id").cast(IntegerType())
         , col("sentiment").cast(IntegerType())
         , col("pg_sync").cast(BooleanType())
-        , col("createdAt").cast(StringType())
-        , col("updatedAt").cast(StringType())
+        , col("createdAt")
+        , col("updatedAt")
     ).dropDuplicates(["post_id"])
-    print(posts_classified_df.count())
-    posts_classified_df.show(truncate= False)
+    # print(posts_classified_df.count())
+    # posts_classified_df.show(truncate= False)
     # posts_classified_df.printSchema()
     df_write = SparkWriteDatabases(spark_connect.spark, spark_configs)
     df_write.spark_validate_before_write_mongodb(posts_classified_df,spark_configs["mongodb"]["database"], spark_configs["mongodb"]["collection_posts"], spark_configs["mongodb"]["uri"], "append")

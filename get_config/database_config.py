@@ -44,7 +44,8 @@ class ElsConfig(DatabaseConfig):
     port : str
     user: str
     password: str
-    index: str
+    index_not_classify: str
+    index_classify: str
 
 def get_database_config() -> Dict[str,DatabaseConfig]:
     load_dotenv()
@@ -79,7 +80,8 @@ def get_database_config() -> Dict[str,DatabaseConfig]:
             port= os.getenv("ELASTIC_PORT"),
             user= os.getenv("ELASTIC_AUTH_USERNAME"),
             password= os.getenv("ELASTIC_AUTH_PASSWORD"),
-            index= os.getenv("ELASTIC_RAW_POSTS_INDEX")
+            index_not_classify= os.getenv("ELASTIC_RAW_POSTS_INDEX_NOT_CLASSIFY"),
+            index_classify= os.getenv("ELASTIC_RAW_POSTS_INDEX_CLASSIFY")
         )
     }
 
